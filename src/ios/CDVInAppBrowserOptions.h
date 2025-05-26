@@ -46,6 +46,14 @@
 @property (nonatomic, assign) BOOL disallowoverscroll;
 @property (nonatomic, copy) NSString* beforeload;
 
+// Custom options
+@property (nonatomic, assign) BOOL appheader;
+@property (nonatomic, assign) BOOL appheadernavbackbutton;
+@property (nonatomic, assign) BOOL appheaderclosebutton;
+@property (nonatomic, assign) BOOL appfooter;
+@property (nonatomic, copy) NSString* appfooterimageurl;
+@property (nonatomic, copy) NSString* appfooterlabel;
+
 + (CDVInAppBrowserOptions*)parseOptions:(NSString*)options;
 
 @end

@@ -35,6 +35,10 @@
 #define    LOCATIONBAR_HEIGHT 21.0
 #define    FOOTER_HEIGHT ((TOOLBAR_HEIGHT) + (LOCATIONBAR_HEIGHT))
 
+// Custom options
+#define    APP_HEADER_HEIGHT 56.0
+#define    APP_FOOTER_HEIGHT 56.0
+
 #pragma mark CDVWKInAppBrowser
 
 @implementation CDVWKInAppBrowser
@@ -151,7 +155,9 @@ static CDVWKInAppBrowser* instance = nil;
         }];
     }
 
-    if (self.inAppBrowserViewController == nil) {
+    // Custom options: Add appHeader and appFooter flags to the below if condition to initialize the inAppBrowserViewController with latest browser options. So subviews create every times when In App Browser opens.
+    // if (self.inAppBrowserViewController == nil) {
+    if (self.inAppBrowserViewController == nil || browserOptions.appheader || browserOptions.appfooter) {
         self.inAppBrowserViewController = [[CDVWKInAppBrowserViewController alloc] initWithBrowserOptions: browserOptions andSettings:self.commandDelegate.settings];
         self.inAppBrowserViewController.navigationDelegate = self;
         
@@ -162,6 +168,11 @@ static CDVWKInAppBrowser* instance = nil;
     
     [self.inAppBrowserViewController showLocationBar:browserOptions.location];
     [self.inAppBrowserViewController showToolBar:browserOptions.toolbar :browserOptions.toolbarposition];
+    
+    // Custom options
+    [self.inAppBrowserViewController showAppHeader:browserOptions.appheader];
+    [self.inAppBrowserViewController showAppFooter:browserOptions.appfooter];
+
     if (browserOptions.closebuttoncaption != nil || browserOptions.closebuttoncolor != nil) {
         int closeButtonIndex = browserOptions.lefttoright ? (browserOptions.hidenavigationbuttons ? 1 : 4) : 0;
         [self.inAppBrowserViewController setCloseButtonTitle:browserOptions.closebuttoncaption :browserOptions.closebuttoncolor :closeButtonIndex];
@@ -858,6 +869,14 @@ BOOL isExiting = FALSE;
     [self.view addSubview:self.toolbar];
     [self.view addSubview:self.addressLabel];
     [self.view addSubview:self.spinner];
+    
+    // Custom options
+    [self setAppHeader];
+    [self setAppFooter];
+    
+    // Log: Get the count of subviews
+    NSInteger subviewCount = [self.view.subviews count];
+    NSLog(@"Number of subviews: %ld", (long)subviewCount);
 }
 
 - (id)settingForKey:(NSString*)key
@@ -1099,6 +1118,21 @@ BOOL isExiting = FALSE;
         self.toolbar.frame = CGRectMake(self.toolbar.frame.origin.x, statusBarHeight, self.toolbar.frame.size.width, self.toolbar.frame.size.height);
     }
     
+    // Custom options
+    if (_browserOptions.appheader) {
+        // If we have to display the app header on top of the web view, we need to account for its height
+        viewBounds.origin.y += APP_HEADER_HEIGHT;
+        self.appHeader.frame = CGRectMake(self.appHeader.frame.origin.x, statusBarHeight, self.appHeader.frame.size.width, self.appHeader.frame.size.height);
+        viewBounds.size.height -= APP_HEADER_HEIGHT;
+    }
+    
+    // Custom options
+    if (_browserOptions.appfooter && _browserOptions.appfooterimageurl != nil && _browserOptions.appfooterlabel != nil) {
+        // If we have to display the app footer on bottom of the web view, we need to account for its height
+        // viewBounds.size.height -= APP_FOOTER_HEIGHT;
+        viewBounds.size.height -= APP_FOOTER_HEIGHT + [self getSafeAreaInsetBottom];
+    }
+    
     self.webView.frame = viewBounds;
 }
 
@@ -1228,5 +1262,292 @@ BOOL isExiting = FALSE;
 - (void)presentationControllerWillDismiss:(UIPresentationController *)presentationController {
     isExiting = TRUE;
 }
+
+/* Custom options */
+- (void) showAppHeader: (BOOL) show {
+
+    CGRect toolbarFrame = self.appHeader.frame;
+    
+    // prevent double show/hide
+    if (show == !(self.appHeader.hidden)) {
+        return;
+    }
+    
+    if (show) {
+        self.appHeader.hidden = NO;
+
+        // no locationBar, so put toolBar at the bottom
+        CGRect webViewBounds = self.view.bounds;
+        webViewBounds.size.height -= APP_HEADER_HEIGHT;
+        self.appHeader.frame = toolbarFrame;
+        
+        toolbarFrame.origin.y = 0;
+        webViewBounds.origin.y += toolbarFrame.size.height;
+        [self setWebViewFrame:webViewBounds];
+        
+    } else {
+        self.appHeader.hidden = YES;
+
+        // no locationBar, expand webView to screen dimensions
+        // [self setWebViewFrame:self.view.bounds];
+    }
+}
+
+- (void) setAppHeader {
+    
+    // Guard
+    if (!_browserOptions.appheader) return;
+    
+    NSString *leftButtonImageName = @"iab-app-header-arrow-back";
+    NSString *centerImageName = @"iab-app-header-logo";
+    NSString *rightButtonImageName = @"iab-app-header-close";
+    
+    // Position the header at the top
+    float headerY = 0.0;
+    CGRect headerFrame = CGRectMake(0.0, headerY, self.view.bounds.size.width, APP_HEADER_HEIGHT);
+
+    // Initialize the app header (UIToolbar)
+    self.appHeader = [[UIToolbar alloc] initWithFrame:headerFrame];
+    self.appHeader.alpha = 1.0;
+    self.appHeader.autoresizesSubviews = YES;
+    self.appHeader.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    self.appHeader.clearsContextBeforeDrawing = NO;
+    self.appHeader.clipsToBounds = NO;
+    self.appHeader.contentMode = UIViewContentModeScaleToFill;
+    self.appHeader.hidden = NO;
+    self.appHeader.multipleTouchEnabled = NO;
+    self.appHeader.opaque = NO;
+    self.appHeader.userInteractionEnabled = YES;
+    self.appHeader.backgroundColor = UIColor.whiteColor;
+    self.appHeader.barTintColor = UIColor.whiteColor;
+    
+    // Set border bottom
+    CALayer *border = [CALayer layer];
+    border.backgroundColor = [[UIColor colorWithRed:0 green:0 blue:0 alpha:0.2] CGColor];
+    border.frame = CGRectMake(0, self.appHeader.frame.size.height - 1, self.appHeader.frame.size.width, 1);
+    [self.appHeader.layer addSublayer:border];
+
+    // Load the center image from the app's main bundle
+    UIImage *centerImage = [UIImage imageNamed:centerImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    UIImageView *centerImageView = [[UIImageView alloc] initWithImage:centerImage];
+    centerImageView.contentMode = UIViewContentModeScaleAspectFit;
+    centerImageView.frame = CGRectMake(0, 0, 131, 34);
+    UIBarButtonItem *centerImageItem = [[UIBarButtonItem alloc] initWithCustomView:centerImageView];
+
+    // Create a flexible space to push the center image to the middle
+    UIBarButtonItem *flexibleSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+
+    // Load the right button image from the app's main bundle
+    UIImage *rightButtonImage = [UIImage imageNamed:rightButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    UIButton *rightButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    [rightButton setImage:rightButtonImage forState:UIControlStateNormal];
+    rightButton.frame = CGRectMake(0, 0, 25, 26); // Set frame size for the button
+    [rightButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    UIBarButtonItem *rightButtonItem = [[UIBarButtonItem alloc] initWithCustomView:rightButton];
+    
+    // Load the left button image from the app's main bundle
+    UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    if (!_browserOptions.lefttoright)
+        leftButtonImage = [UIImage imageWithCGImage:leftButtonImage.CGImage scale:leftButtonImage.scale orientation:UIImageOrientationUpMirrored];
+    UIButton *leftButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    [leftButton setImage:leftButtonImage forState:UIControlStateNormal];
+    leftButton.frame = CGRectMake(0, 0, 12, 20); // Set frame size for the button
+    [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+    UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+
+    // Set app header items: flexible space to center the image, center image, and right button
+    [self.appHeader setItems: _browserOptions.lefttoright ? @[leftButtonItem, flexibleSpace, centerImageItem, flexibleSpace, rightButtonItem] : @[rightButtonItem, flexibleSpace, centerImageItem, flexibleSpace, leftButtonItem]];
+    
+    // Show or Hide the app header navigation back button
+    if (!_browserOptions.appheadernavbackbutton)
+        leftButton.hidden = YES;
+    
+    // Show or Hide the app header close button
+    if (!_browserOptions.appheaderclosebutton)
+        rightButton.hidden = YES;
+
+    // Add the app header to the view
+    [self.view addSubview:self.appHeader];
+}
+
+- (void) showAppFooter: (BOOL) show {
+    
+    CGRect toolbarFrame = self.appFooter.frame;
+    
+    // prevent double show/hide
+    if (show == !(self.appFooter.hidden)) {
+        return;
+    }
+    
+    if (show) {
+        self.appFooter.hidden = NO;
+
+        // no locationBar, so put toolBar at the bottom
+        CGRect webViewBounds = self.view.bounds;
+        // webViewBounds.size.height -= APP_FOOTER_HEIGHT;
+        webViewBounds.size.height -= APP_FOOTER_HEIGHT + [self getSafeAreaInsetBottom];
+        self.appFooter.frame = toolbarFrame;
+        
+        toolbarFrame.origin.y = webViewBounds.size.height;
+        [self setWebViewFrame:webViewBounds];
+        
+    } else {
+        self.appFooter.hidden = YES;
+
+        // no locationBar, expand webView to screen dimensions
+        // [self setWebViewFrame:self.view.bounds];
+    }
+}
+
+- (void) setAppFooter {
+    
+    // Guard
+    if (!_browserOptions.appfooter || _browserOptions.appfooterimageurl == nil || _browserOptions.appfooterlabel == nil) return;
+    
+    // Position the footer at the bottom
+    // float footerY = self.view.bounds.size.height - APP_FOOTER_HEIGHT;
+    float footerY = self.view.bounds.size.height - APP_FOOTER_HEIGHT - [self getSafeAreaInsetBottom];
+    CGRect footerFrame = CGRectMake(0.0, footerY, self.view.bounds.size.width, APP_FOOTER_HEIGHT);
+
+    // Initialize the app header (UIToolbar)
+    self.appFooter = [[UIToolbar alloc] initWithFrame:footerFrame];
+    self.appFooter.alpha = 1.0;
+    self.appFooter.autoresizesSubviews = YES;
+    self.appFooter.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    self.appFooter.clearsContextBeforeDrawing = NO;
+    self.appFooter.clipsToBounds = NO;
+    self.appFooter.contentMode = UIViewContentModeScaleToFill;
+    self.appFooter.hidden = NO;
+    self.appFooter.multipleTouchEnabled = NO;
+    self.appFooter.opaque = NO;
+    self.appFooter.userInteractionEnabled = YES;
+    self.appFooter.backgroundColor = UIColor.whiteColor;
+    self.appFooter.barTintColor = UIColor.whiteColor;
+    
+    // Set border top
+    CALayer *border = [CALayer layer];
+    border.backgroundColor = [[UIColor colorWithRed:0 green:0 blue:0 alpha:0.2] CGColor];
+    border.frame = CGRectMake(0, 0, self.appFooter.frame.size.width, 1);
+    [self.appFooter.layer addSublayer:border];
+    
+    // Set box shadow
+    self.appFooter.layer.shadowColor = [[UIColor blackColor] CGColor];
+    self.appFooter.layer.shadowOpacity = .17;
+    self.appFooter.layer.shadowOffset = CGSizeMake(0, -1);
+    self.appFooter.layer.shadowRadius = 9;
+    self.appFooter.layer.masksToBounds = NO;
+
+    // Load the image from the url asynchronously
+    NSURL *url = [NSURL URLWithString:_browserOptions.appfooterimageurl];
+    url = [self resolveURLWithPathTraversal:url];
+    UIImageView *imageView = [[UIImageView alloc] init];
+    imageView.contentMode = UIViewContentModeScaleAspectFit;
+    imageView.frame = CGRectMake(0, 0, 24, 24);
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        
+        // Create a mutable request
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+
+        // Set the Referer header to the same URL
+        [request setValue:url.absoluteString forHTTPHeaderField:@"Referer"];
+
+        // Set other headers or configuration as needed
+        [request setHTTPMethod:@"GET"];
+        
+        NSURLSessionDataTask *dataTask = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (data) {
+                UIImage *image = [[UIImage alloc] initWithData:data];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [imageView setImage:image];
+                });
+            } else {
+                NSLog(@"Error: %@", error);
+            }
+        }];
+        [dataTask resume];
+    });
+    
+    // Create the label
+    UILabel* label = [[UILabel alloc] init];
+    label.text = _browserOptions.appfooterlabel;
+    label.textColor = [UIColor blackColor];
+    label.font = [UIFont systemFontOfSize:12];
+    label.alpha = .5;
+    [label sizeToFit];
+    
+    // Define the margin between image and label
+    CGFloat margin = 7.0;
+
+    // Calculate the total width of image, label and margin
+    CGFloat totalWidth = imageView.frame.size.width + margin + label.frame.size.width;
+    
+    // Calculate the starting X position to center them in the toolbar
+    CGFloat startX = (self.appFooter.frame.size.width - totalWidth) / 2;
+    
+    // Set the image's position and label's position based on direction
+    if (_browserOptions.lefttoright) {
+
+        // Set the image's position
+        imageView.frame = CGRectMake(startX, (self.appFooter.frame.size.height - imageView.frame.size.height) / 2, imageView.frame.size.width, imageView.frame.size.height);
+
+        // Set label's position
+        label.frame = CGRectMake(CGRectGetMaxX(imageView.frame) + margin, (self.appFooter.frame.size.height - label.frame.size.height) / 2, label.frame.size.width, label.frame.size.height);
+
+    } else {
+
+        // Set the label's position
+        label.frame = CGRectMake(startX, (self.appFooter.frame.size.height - label.frame.size.height) / 2, label.frame.size.width, label.frame.size.height);
+        
+        // Set the image's position
+        imageView.frame = CGRectMake(CGRectGetMaxX(label.frame) + margin, (self.appFooter.frame.size.height - imageView.frame.size.height) / 2, imageView.frame.size.width, imageView.frame.size.height);
+    }
+
+    // Add both views to the app footer
+    [self.appFooter addSubview:imageView];
+    [self.appFooter addSubview:label];
+
+    // Add the app header to the view
+    [self.view addSubview:self.appFooter];
+}
+
+- (CGFloat) getSafeAreaInsetBottom {
+
+    // Uncomment below if move appfooter to top of botom safearea
+    // return [UIApplication.sharedApplication.windows firstObject].safeAreaInsets.bottom;
+
+    return 0;
+}
+
+- (NSURL *) resolveURLWithPathTraversal: (NSURL *) url {
+
+    // Extract the path part of the URL
+    NSString *path = [url path];
+    NSMutableArray *pathComponents = [[path pathComponents] mutableCopy];
+
+    // Remove any occurrences of ".." and resolve them by removing the preceding directory
+    for (NSInteger i = 0; i < pathComponents.count; i++) {
+        if ([pathComponents[i] isEqualToString:@".."]) {
+            // Remove the ".." and also the preceding directory
+            [pathComponents removeObjectAtIndex:i];
+            if (i > 0) {
+                [pathComponents removeObjectAtIndex:i - 1];
+                // Adjust the index to account for the removed component
+                i--;
+            }
+        }
+    }
+
+    // Reconstruct the cleaned-up path
+    NSString *resolvedPath = [NSString pathWithComponents:pathComponents];
+
+    // Use NSURLComponents to reconstruct the URL with the resolved path
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    components.path = [resolvedPath hasPrefix:@"/"] ? resolvedPath : [@"/" stringByAppendingString:resolvedPath];
+
+    // Return the resolved URL
+    return components.URL;
+}
+
+/* // Custom options */
 
 @end //CDVWKInAppBrowserViewController

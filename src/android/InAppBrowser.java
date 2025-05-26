@@ -84,6 +84,28 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.StringTokenizer;
 
+// Extend WebView functionality
+import android.app.DownloadManager;
+import android.os.Environment;
+import android.webkit.URLUtil;
+import android.Manifest;
+import android.webkit.PermissionRequest;
+import org.apache.cordova.PermissionHelper;
+import android.webkit.GeolocationPermissions;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ShapeDrawable;
+import android.graphics.drawable.shapes.RectShape;
+import android.graphics.drawable.shapes.RoundRectShape;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStream;
+import android.graphics.BitmapFactory;
+import android.os.Handler;
+import android.os.Looper;
+
 @SuppressLint("SetJavaScriptEnabled")
 public class InAppBrowser extends CordovaPlugin {
 
@@ -152,6 +174,9 @@ public class InAppBrowser extends CordovaPlugin {
     private String[] allowedSchemes;
     private InAppBrowserClient currentClient;
 
+    // Custom Options
+    private CustomOption customOption;
+
     /**
      * Executes the request and returns PluginResult.
      *
@@ -170,6 +195,9 @@ public class InAppBrowser extends CordovaPlugin {
             }
             final String target = t;
             final HashMap<String, String> features = parseFeature(args.optString(2));
+
+            // Custom Option
+            customOption = new CustomOption(features);
 
             LOG.d(LOG_TAG, "target = " + target);
 
@@ -439,7 +467,11 @@ public class InAppBrowser extends CordovaPlugin {
                 if (option.hasMoreElements()) {
                     String key = option.nextToken();
                     String value = option.nextToken();
-                    if (!customizableOptions.contains(key)) {
+                    if (!customizableOptions.contains(key)
+                        // Custom options
+                        && !key.equals(CustomOption.APP_FOOTER_IMAGE_URL)
+                        && !key.equals(CustomOption.APP_FOOTER_LABEL)
+                    ) {
                         value = value.equals("yes") || value.equals("no") ? value : "yes";
                     }
                     map.put(key, value);
@@ -922,7 +954,7 @@ public class InAppBrowser extends CordovaPlugin {
                 inAppWebView.setId(Integer.valueOf(6));
                 // File Chooser Implemented ChromeClient
                 inAppWebView.setWebChromeClient(new InAppChromeClient(thatWebView) {
-                    public boolean onShowFileChooser (WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams)
+                    public boolean onShowFileChooser_exist (WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams)
                     {
                         LOG.d(LOG_TAG, "File Chooser 5.0+");
                         // If callback exists, finish it.
@@ -939,6 +971,63 @@ public class InAppBrowser extends CordovaPlugin {
                         // Run cordova startActivityForResult
                         cordova.startActivityForResult(InAppBrowser.this, Intent.createChooser(content, "Select File"), FILECHOOSER_REQUESTCODE);
                         return true;
+                    }
+
+                    @Override
+                    public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+
+                        LOG.d(LOG_TAG, "File Chooser 5.0+");
+                        // If callback exists, finish it.
+                        if(mUploadCallback != null) {
+                        mUploadCallback.onReceiveValue(null);
+                        }
+                        mUploadCallback = filePathCallback;
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (!org.apache.cordova.PermissionHelper.hasPermission(InAppBrowser.this, android.Manifest.permission.CAMERA)) {
+                            org.apache.cordova.PermissionHelper.requestPermission(InAppBrowser.this, FILECHOOSER_CAMERA_REQUESTCODE, android.Manifest.permission.CAMERA);
+                        } else {
+                            return onShowFileChooserHandler(true);
+                        }
+                        } else {
+                        return onShowFileChooserHandler(true);
+                        }
+
+                        return true;
+                    }
+
+                    @Override
+                    public void onPermissionRequest(PermissionRequest request) {
+
+                        permissionRequest =  request;
+
+                        boolean isRequestPermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
+
+                        List<String> permissionList = new ArrayList<>();
+                        List<String> resourceList = Arrays.asList(request.getResources());
+
+                        if (resourceList.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
+                        permissionList.add(Manifest.permission.CAMERA);
+                        }
+
+                        if (resourceList.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                        permissionList.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
+                        permissionList.add(Manifest.permission.RECORD_AUDIO);
+                        }
+
+                        if (isRequestPermissionRequired && !permissionList.isEmpty())
+                        PermissionHelper.requestPermissions(InAppBrowser.this, ONPERMISSION_REQUESTCODE, permissionList.toArray(new String[0]));
+                        else
+                        request.grant(request.getResources());
+                    }
+
+                    @Override
+                    public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                        super.onGeolocationPermissionsShowPrompt(origin, callback);
+
+                        geoLocationPermissionCallback = callback;
+                        geoLocationPermissionOrigin = origin;
+                        PermissionHelper.requestPermission(InAppBrowser.this, GEOLOCATION_REQUESTCODE, Manifest.permission.ACCESS_COARSE_LOCATION);
                     }
                 });
                 currentClient = new InAppBrowserClient(thatWebView, edittext, beforeload);
@@ -1054,6 +1143,30 @@ public class InAppBrowser extends CordovaPlugin {
                     webViewLayout.addView(footer);
                 }
 
+                // Custom options
+                if (customOption.showAppHeader() || customOption.showAppFooter()) {
+
+                // Initialize layout parameter for the WebView
+                RelativeLayout.LayoutParams webViewParams = new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+
+                // Custom options - Add App Header
+                if (customOption.showAppHeader()) {
+                    RelativeLayout appHeader = customOption.getAppHeader();
+                    webViewLayout.addView(appHeader);
+                    webViewParams.addRule(RelativeLayout.BELOW, appHeader.getId());
+                }
+
+                // Custom options - Add App Footer
+                if (customOption.showAppFooter()) {
+                    RelativeLayout appFooter = customOption.getAppFooter();
+                    webViewLayout.addView(appFooter);
+                    webViewParams.addRule(RelativeLayout.ABOVE, appFooter.getId());
+                }
+
+                // Set the WebView layout parameters only once
+                inAppWebView.setLayoutParams(webViewParams);
+                }
+
                 WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
                 lp.copyFrom(dialog.getWindow().getAttributes());
                 lp.width = WindowManager.LayoutParams.MATCH_PARENT;
@@ -1069,6 +1182,8 @@ public class InAppBrowser extends CordovaPlugin {
                 if (openWindowHidden && dialog != null) {
                     dialog.hide();
                 }
+
+                extendWebViewFunctionality();
             }
         };
         this.cordova.getActivity().runOnUiThread(runnable);
@@ -1485,6 +1600,437 @@ public class InAppBrowser extends CordovaPlugin {
 
             // By default handle 401 like we'd normally do!
             super.onReceivedHttpAuthRequest(view, handler, host, realm);
+        }
+    }
+
+    private final static int FILECHOOSER_CAMERA_REQUESTCODE = 2;
+    Uri photoURI;
+    private boolean onShowFileChooserHandler(boolean haveCameraPermission) {
+
+        // This intent configuration sets up a request to the system to allow the user to select a file from their device
+        Intent content = new Intent(Intent.ACTION_GET_CONTENT);
+        content.addCategory(Intent.CATEGORY_OPENABLE);
+        content.setType("*/*");
+
+        // If have not camera permission
+        if (!haveCameraPermission) {
+            // Run cordova startActivityForResult
+            cordova.startActivityForResult(InAppBrowser.this, Intent.createChooser(content, "Select File"), FILECHOOSER_REQUESTCODE);
+            return true;
+        }
+
+        // Create intent for camera capture
+        Intent takePictureIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        if (takePictureIntent.resolveActivity(cordova.getActivity().getPackageManager()) != null) {
+
+            java.io.File photoFile = null;
+            try {
+                photoFile = createImageFile();
+            } catch (java.io.IOException ex) {
+                return false;
+            }
+
+            int resId = cordova.getContext().getResources().getIdentifier("applicationId", "string", cordova.getContext().getPackageName());
+            String applicationId = cordova.getContext().getString(resId);
+
+            photoURI = androidx.core.content.FileProvider.getUriForFile(cordova.getActivity(), applicationId + ".fileprovider", photoFile);
+            takePictureIntent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, photoURI);
+            takePictureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        }
+
+        Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
+        chooserIntent.putExtra(Intent.EXTRA_INTENT, content);
+        chooserIntent.putExtra(Intent.EXTRA_TITLE, "Select File");
+        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{takePictureIntent});
+
+        // Run cordova startActivityForResult
+        cordova.startActivityForResult(InAppBrowser.this, chooserIntent, FILECHOOSER_REQUESTCODE);
+
+        return true;
+    }
+
+    private java.io.File createImageFile() throws java.io.IOException {
+
+        // Create an image file name
+        String timeStamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+        String imageFileName = "JPEG_" + timeStamp + "_";
+        java.io.File storageDir = cordova.getActivity().getCacheDir();
+        return java.io.File.createTempFile(imageFileName, ".jpg", storageDir);
+    }
+
+    private PermissionRequest permissionRequest = null;
+    private final static int ONPERMISSION_REQUESTCODE = 3;
+    private final static int GEOLOCATION_REQUESTCODE = 4;
+    private GeolocationPermissions.Callback geoLocationPermissionCallback;
+    private String geoLocationPermissionOrigin;
+    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
+
+        // Guard
+        if (grantResults.length == 0) return;
+
+        // File upload camera feature
+        if (requestCode == FILECHOOSER_CAMERA_REQUESTCODE)
+            onShowFileChooserHandler(grantResults[0] == PackageManager.PERMISSION_GRANTED);
+
+        // On permission feature (Camera, Microphone)
+        else if (requestCode == ONPERMISSION_REQUESTCODE) {
+
+            boolean granted = true;
+            for (int res: grantResults) {
+                if (res != PackageManager.PERMISSION_GRANTED) {
+                    granted = false;
+                    break;
+                }
+            }
+
+            if (granted) permissionRequest.grant(permissionRequest.getResources());
+            else permissionRequest.deny();
+        }
+
+        // Geolocation feature
+        else if (requestCode == GEOLOCATION_REQUESTCODE)
+            geoLocationPermissionCallback.invoke(geoLocationPermissionOrigin, grantResults[0] == PackageManager.PERMISSION_GRANTED, false);
+
+    }
+
+    private void extendWebViewFunctionality() {
+
+        inAppWebView.setDownloadListener(new DownloadListener() {
+            @Override
+            public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
+
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                request.setMimeType(mimeType);
+                String cookies = android.webkit.CookieManager.getInstance().getCookie(url);
+                request.addRequestHeader("cookie", cookies);
+                request.addRequestHeader("User-Agent", userAgent);
+                request.setDescription("Downloading file...");
+                request.setTitle(URLUtil.guessFileName(url, contentDisposition, mimeType));
+                request.allowScanningByMediaScanner();
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType));
+                ((DownloadManager) cordova.getActivity().getApplication().getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(request);
+            }
+        });
+    }
+
+    private class CustomOption {
+
+        private static final String APP_HEADER = "appHeader";
+        private static final String APP_HEADER_NAV_BACK_BUTTON = "appHeaderNavBackButton";
+        private static final String APP_HEADER_CLOSE_BUTTON = "appHeaderCloseButton";
+
+        private static final String APP_FOOTER = "appFooter";
+        private static final String APP_FOOTER_IMAGE_URL = "appFooterImageURL";
+        private static final String APP_FOOTER_LABEL = "appFooterLabel";
+
+        private static final int APP_HEADER_HEIGHT = 56;
+        private static final int APP_FOOTER_HEIGHT = 56;
+
+        private HashMap<String, String> features;
+
+        public CustomOption(HashMap<String, String> features) {
+            this.features = features;
+        }
+
+        public boolean showAppHeader() {
+            return features.get(APP_HEADER) != null && features.get(APP_HEADER).equals("yes");
+        }
+
+        public boolean showAppFooter() {
+            return features.get(APP_FOOTER) != null && features.get(APP_FOOTER).equals("yes")
+                && features.get(APP_FOOTER_IMAGE_URL) != null && !features.get(APP_FOOTER_IMAGE_URL).isEmpty()
+                && features.get(APP_FOOTER_LABEL) != null && !features.get(APP_FOOTER_LABEL).isEmpty();
+        }
+
+        public RelativeLayout getAppHeader() {
+
+            // Header - Create the header layout
+            RelativeLayout headerLayout = new RelativeLayout(cordova.getContext());
+            headerLayout.setBackgroundColor(Color.WHITE);
+            headerLayout.setId(View.generateViewId());
+
+            RelativeLayout.LayoutParams layoutParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, sizeInPixel(APP_HEADER_HEIGHT));
+            layoutParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            headerLayout.setLayoutParams(layoutParams);
+
+            // Logo - Create the ImageView for the logo
+            ImageView logoImageView = new ImageView(cordova.getContext());
+            Resources resources = cordova.getActivity().getResources();
+            logoImageView.setImageResource(resources.getIdentifier("iab_app_header_logo", "drawable", cordova.getActivity().getPackageName()));
+
+            RelativeLayout.LayoutParams imageViewParams = new RelativeLayout.LayoutParams(sizeInPixel(131), sizeInPixel(34));
+            imageViewParams.addRule(RelativeLayout.CENTER_IN_PARENT);
+            logoImageView.setLayoutParams(imageViewParams);
+
+            // Back - Create the ImageButton for the navigation back button
+            ImageButton backImageButton = new ImageButton(cordova.getContext());
+            backImageButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            backImageButton.setBackground(null);
+            backImageButton.setPadding(0, 0, 0, 0);
+            backImageButton.setImageResource(resources.getIdentifier("iab_app_header_arrow_back", "drawable", cordova.getActivity().getPackageName()));
+            backImageButton.setAdjustViewBounds(true);
+            if (!isLeftToRight())
+                backImageButton.setScaleX(-1f);
+
+            RelativeLayout.LayoutParams backImageButtonParams = new RelativeLayout.LayoutParams(sizeInPixel(12), sizeInPixel(20));
+            backImageButtonParams.addRule(isLeftToRight() ? RelativeLayout.ALIGN_PARENT_START : RelativeLayout.ALIGN_PARENT_END);
+            backImageButtonParams.addRule(RelativeLayout.CENTER_VERTICAL);
+            backImageButtonParams.setMargins(sizeInPixel(20), 0, sizeInPixel(20), 0);
+            backImageButton.setLayoutParams(backImageButtonParams);
+
+            // Back button click listener
+            backImageButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    goBack();
+                }
+            });
+
+            // Close - Create the ImageButton for the close button
+            ImageButton closeImageButton = new ImageButton(cordova.getContext());
+            closeImageButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            closeImageButton.setBackground(null);
+            closeImageButton.setPadding(0, 0, 0, 0);
+            closeImageButton.setImageResource(resources.getIdentifier("iab_app_header_close", "drawable", cordova.getActivity().getPackageName()));
+            closeImageButton.setAdjustViewBounds(true);
+
+            RelativeLayout.LayoutParams closeImageButtonParams = new RelativeLayout.LayoutParams(sizeInPixel(25), sizeInPixel(26));
+            closeImageButtonParams.addRule(isLeftToRight() ? RelativeLayout.ALIGN_PARENT_END : RelativeLayout.ALIGN_PARENT_START);
+            closeImageButtonParams.addRule(RelativeLayout.CENTER_VERTICAL);
+            closeImageButtonParams.setMargins(sizeInPixel(20), 0, sizeInPixel(20), 0);
+            closeImageButton.setLayoutParams(closeImageButtonParams);
+
+            // Close button click listener
+            closeImageButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    closeDialog();
+                }
+            });
+
+            // Border Bottom - Create a new view that act as the bottom border
+            View bottomBorder = new View(cordova.getContext());
+            bottomBorder.setBackgroundColor(Color.parseColor("#33000000"));
+
+            RelativeLayout.LayoutParams bottomBorderParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, sizeInPixel(1));
+            bottomBorderParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            bottomBorder.setLayoutParams(bottomBorderParams);
+
+            // Border - Add the border bottom to the header layout
+            headerLayout.addView(bottomBorder);
+
+            // Logo - Add the logo image to the header layout
+            headerLayout.addView(logoImageView);
+
+            // Back - Add the back ImageButton to the header layout
+            if (showAppHeaderNavBackButton())
+                headerLayout.addView(backImageButton);
+
+            // Close - Add the close ImageButton to the header layout
+            if (showAppHeaderCloseButton())
+                headerLayout.addView(closeImageButton);
+
+            return headerLayout;
+        }
+
+        private View getShadow1() {
+
+            ShapeDrawable shapeDrawable = new ShapeDrawable();
+
+            shapeDrawable.setShape(new RectShape());
+
+            shapeDrawable.getPaint().setColor(Color.parseColor("#42FF0000"));
+
+            float cornerRadius = sizeInPixel(5);  // Convert dp to pixels
+            float[] radii = new float[]{
+                cornerRadius, cornerRadius,
+                cornerRadius, cornerRadius,
+                0, 0,
+                0, 0
+            };
+
+            RoundRectShape roundRectShape = new RoundRectShape(radii, null, null);
+            shapeDrawable.setShape(roundRectShape);
+
+            View rectangleView = new View(cordova.getContext());
+            rectangleView.setBackground(shapeDrawable);
+
+            RelativeLayout.LayoutParams layoutParamss = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                sizeInPixel(9)  // Adjust height as needed
+            );
+            layoutParamss.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            rectangleView.setLayoutParams(layoutParamss);
+
+            return rectangleView;
+        }
+
+        private View getShadow2() {
+
+            GradientDrawable shadowDrawable = new GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,
+                new int[] {Color.parseColor("#2BFF0000"), Color.TRANSPARENT}
+            );
+
+            shadowDrawable.setShape(GradientDrawable.RECTANGLE);
+
+            View shadowView = new View(cordova.getContext());
+            shadowView.setBackground(shadowDrawable);
+
+            RelativeLayout.LayoutParams shadowParams = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                sizeInPixel(9)  // Height of shadow
+            );
+
+            shadowParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            shadowView.setLayoutParams(shadowParams);
+
+            return shadowView;
+        }
+
+        public RelativeLayout getAppFooter() {
+
+            // Footer - Create the header layout
+            RelativeLayout footerLayout = new RelativeLayout(cordova.getContext());
+            footerLayout.setBackgroundColor(Color.WHITE);
+            footerLayout.setId(View.generateViewId());
+
+            RelativeLayout.LayoutParams layoutParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, sizeInPixel(APP_FOOTER_HEIGHT));
+            layoutParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            footerLayout.setLayoutParams(layoutParams);
+
+            // Logo - Create the ImageView for the logo
+            ImageView logoImageView = new ImageView(cordova.getContext());
+            logoImageView.setId(View.generateViewId());
+
+            // Load Image from Network
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            Handler handler = new Handler(Looper.getMainLooper());
+            executor.execute(() -> {
+                // Background task: download the image
+                Bitmap bitmap = downloadImage(features.get(APP_FOOTER_IMAGE_URL));
+
+                // Post the result to the UI thread
+                handler.post(() -> {
+                    if (bitmap != null) {
+                        logoImageView.setImageBitmap(bitmap);
+                    }
+                });
+            });
+
+            RelativeLayout.LayoutParams imageViewParams = new RelativeLayout.LayoutParams(sizeInPixel(24), sizeInPixel(24));
+            logoImageView.setLayoutParams(imageViewParams);
+
+            // Label - Create a TextView for the label
+            TextView labelTextView = new TextView(cordova.getContext());
+            labelTextView.setId(View.generateViewId());
+            labelTextView.setText(features.get(APP_FOOTER_LABEL));
+            labelTextView.setTextColor(Color.parseColor("#80000000"));
+            labelTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+
+            RelativeLayout.LayoutParams labelParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+            labelParams.setMargins(10, 0, 10, 0);
+            labelTextView.setLayoutParams(labelParams);
+
+            // Border top - Create a new view that act as the bottom top
+            View topBorder = new View(cordova.getContext());
+            topBorder.setBackgroundColor(Color.parseColor("#33000000"));
+
+            RelativeLayout.LayoutParams topBorderParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, sizeInPixel(1.2f));
+            topBorderParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            topBorder.setLayoutParams(topBorderParams);
+
+            /*
+            // Shadow - Create a new view that acts as the shadow
+            View shadowView = new View(cordova.getContext());
+            shadowView.setBackgroundColor(Color.parseColor("#2B000000"));
+
+            RelativeLayout.LayoutParams shadowParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, sizeInPixel(9));
+            shadowParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            shadowParams.setMargins(0, -1, 0, 0);
+            shadowView.setLayoutParams(shadowParams);
+
+            // Shadow - Add the shadow to the footer layout
+            footerLayout.addView(shadowView);
+            */
+
+            // Border - Add the border top to the footer layout
+            footerLayout.addView(topBorder);
+
+            // Group view - Group logo and label
+            LinearLayout horizontalLayout = new LinearLayout(cordova.getContext());
+            horizontalLayout.setOrientation(LinearLayout.HORIZONTAL);
+            horizontalLayout.setGravity(Gravity.CENTER_VERTICAL);
+
+            RelativeLayout.LayoutParams horizontalLayoutParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+            horizontalLayoutParams.addRule(RelativeLayout.CENTER_IN_PARENT);
+            horizontalLayout.setLayoutParams(horizontalLayoutParams);
+
+            // Logo - Add the logo image to the footer layout
+            if (isLeftToRight()) horizontalLayout.addView(logoImageView);
+            else horizontalLayout.addView(labelTextView);
+
+            // Label - Add the label to the footer layout
+            if (isLeftToRight()) horizontalLayout.addView(labelTextView);
+            else horizontalLayout.addView(logoImageView);
+
+            // Group view - Add the group view to the footer layout
+            footerLayout.addView(horizontalLayout);
+
+            return footerLayout;
+        }
+
+        private Bitmap downloadImage(String urlString) {
+
+            Bitmap bitmap = null;
+            try {
+                // Open a URL connection
+                URL url = new URL(urlString);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setDoInput(true);
+                connection.connect();
+
+                // Get the input stream from the connection
+                InputStream input = connection.getInputStream();
+
+                // Decode the input stream into a Bitmap
+                bitmap = BitmapFactory.decodeStream(input);
+
+                // Disconnect connection
+                connection.disconnect();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            return bitmap;
+        }
+
+        private int sizeInPixel(float dp) {
+
+            // final float scale = cordova.getContext().getResources().getDisplayMetrics().density;
+            // return (int) (dp * scale + 0.5f);
+
+            int value = (int) TypedValue.applyDimension( TypedValue.COMPLEX_UNIT_DIP,
+                (float) dp,
+                cordova.getActivity().getResources().getDisplayMetrics()
+            );
+
+            return value;
+        }
+
+        private boolean showAppHeaderNavBackButton() {
+            String option = features.get(APP_HEADER_NAV_BACK_BUTTON);
+            return option != null && option.equals("yes");
+        }
+
+        private boolean showAppHeaderCloseButton() {
+            String option = features.get(APP_HEADER_CLOSE_BUTTON);
+            return option != null && option.equals("yes");
+        }
+
+        private boolean isLeftToRight() {
+            String option = features.get(LEFT_TO_RIGHT);
+            return option == null || option.equals("yes");
         }
     }
 }
