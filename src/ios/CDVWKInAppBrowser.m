@@ -69,8 +69,12 @@ static CDVWKInAppBrowser* instance = nil;
         return;
     }
     
+    // Custom: Get the custom argument passed to close method from ionic
+    BOOL enforce = [[command argumentAtIndex:0 withDefault:@(NO)] boolValue];
+    
     // Things are cleaned up in browserExit.
-    [self.inAppBrowserViewController close];
+    // Custom: argument passed to close method
+    [self.inAppBrowserViewController close: enforce];
 }
 
 - (BOOL) isSystemUrl:(NSURL*)url
@@ -1051,7 +1055,14 @@ BOOL isExiting = FALSE;
     return NO;
 }
 
-- (void)close
+
+// Custom: Replacement of close method to handle regression (somewhere it used directly without arguments)
+- (void) close {
+    [self close: NO];
+}
+
+// Custom: Modify code - argument added
+- (void)close: (BOOL) enforce
 {
     self.currentURL = nil;
     
@@ -1065,6 +1076,14 @@ BOOL isExiting = FALSE;
             [[weakSelf presentingViewController] dismissViewControllerAnimated:YES completion:nil];
         } else {
             [[weakSelf parentViewController] dismissViewControllerAnimated:YES completion:nil];
+        }
+
+        // Custom: Enforce cleanup after dismissal
+        if (enforce) {
+            // Ensure cleanup happens after dismissal
+            if ([self.navigationDelegate respondsToSelector:@selector(browserExit)]) {
+                [self.navigationDelegate browserExit];
+            }
         }
     });
 }
