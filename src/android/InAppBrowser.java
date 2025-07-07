@@ -1283,7 +1283,39 @@ public class InAppBrowser extends CordovaPlugin {
         @TargetApi(Build.VERSION_CODES.N)
         @Override
         public boolean shouldOverrideUrlLoading(WebView webView, WebResourceRequest request) {
+
+            Uri uri = request.getUrl();
+            String scheme = uri.getScheme();
+
+            if (scheme != null && scheme.equals("intent")) {
+                try {
+                    Intent intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
+                    cordova.getActivity().startActivity(intent);
+                    return true;
+                } catch (java.net.URISyntaxException e) {
+                    e.printStackTrace();
+                } catch (android.content.ActivityNotFoundException e) {
+                    e.printStackTrace();
+                    String packageName = getPackageNameFromIntent(uri.toString());
+                    if (packageName != null) {
+                        Intent fallbackIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + packageName));
+                        cordova.getActivity().startActivity(fallbackIntent);
+                    }
+                    return true;
+                }
+            }
+
             return shouldOverrideUrlLoading(request.getUrl().toString(), request.getMethod());
+        }
+
+        private String getPackageNameFromIntent(String intentUri) {
+            try {
+                Intent intent = Intent.parseUri(intentUri, Intent.URI_INTENT_SCHEME);
+                return intent.getPackage();
+            } catch (java.net.URISyntaxException e) {
+                e.printStackTrace();
+            }
+            return null;
         }
 
         /**

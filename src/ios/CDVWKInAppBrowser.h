@@ -85,4 +85,7 @@
 - (void) showAppFooter: (BOOL) show;
 - (void) setAppFooter;
 
+// Custom: Method added
+- (void)close: (BOOL) enforce;
+
 @end
