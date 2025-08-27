@@ -1230,7 +1230,13 @@ public class InAppBrowser extends CordovaPlugin {
             super.onActivityResult(requestCode, resultCode, intent);
             return;
         }
-        mUploadCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, intent));
+
+        if (intent == null && photoURI != null && resultCode == android.app.Activity.RESULT_OK) {
+            mUploadCallback.onReceiveValue(new Uri[]{photoURI});
+            photoURI = null;
+        } else {
+            mUploadCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, intent));
+        }
         mUploadCallback = null;
     }
 
@@ -1303,6 +1309,15 @@ public class InAppBrowser extends CordovaPlugin {
                     }
                     return true;
                 }
+            } else if (scheme != null && scheme.equals("whatsapp")) {
+                try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(Uri.parse(uri.toString()));
+                cordova.getActivity().startActivity(intent);
+                } catch (android.content.ActivityNotFoundException e) {
+                LOG.e(LOG_TAG, "Error with " + uri + ": " + e.toString());
+                }
+                return true;
             }
 
             return shouldOverrideUrlLoading(request.getUrl().toString(), request.getMethod());
@@ -1805,17 +1820,25 @@ public class InAppBrowser extends CordovaPlugin {
             if (!isLeftToRight())
                 backImageButton.setScaleX(-1f);
 
-            RelativeLayout.LayoutParams backImageButtonParams = new RelativeLayout.LayoutParams(sizeInPixel(12), sizeInPixel(20));
+            RelativeLayout.LayoutParams backImageButtonParams = new RelativeLayout.LayoutParams(sizeInPixel(26), sizeInPixel(26));
             backImageButtonParams.addRule(isLeftToRight() ? RelativeLayout.ALIGN_PARENT_START : RelativeLayout.ALIGN_PARENT_END);
             backImageButtonParams.addRule(RelativeLayout.CENTER_VERTICAL);
             backImageButtonParams.setMargins(sizeInPixel(20), 0, sizeInPixel(20), 0);
             backImageButton.setLayoutParams(backImageButtonParams);
 
+            // Set padding of the image of same margin of 20
+            // Since the layout w x h is 26 x 26 and image size w x h is 12 x 20
+            int padH = (sizeInPixel(26) - sizeInPixel(12)) / 2;
+            int padV = (sizeInPixel(26) - sizeInPixel(20)) / 2;
+            backImageButtonParams.setMargins(sizeInPixel(20) - padH, 0, sizeInPixel(20), 0);
+            backImageButton.setPadding(padH, padV, padH, padV);
+
             // Back button click listener
             backImageButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View view) {
-                    goBack();
+                    if (canGoBack()) goBack();
+                    else closeDialog();
                 }
             });
 
