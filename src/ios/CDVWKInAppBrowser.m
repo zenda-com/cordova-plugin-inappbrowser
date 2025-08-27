@@ -1364,14 +1364,31 @@ BOOL isExiting = FALSE;
     [rightButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
     UIBarButtonItem *rightButtonItem = [[UIBarButtonItem alloc] initWithCustomView:rightButton];
     
+    // // Load the left button image from the app's main bundle
+    // UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    // if (!_browserOptions.lefttoright)
+    //     leftButtonImage = [UIImage imageWithCGImage:leftButtonImage.CGImage scale:leftButtonImage.scale orientation:UIImageOrientationUpMirrored];
+    // UIButton *leftButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    // [leftButton setImage:leftButtonImage forState:UIControlStateNormal];
+    // leftButton.frame = CGRectMake(0, 0, 12, 20); // Set frame size for the button
+    // [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+    // UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+
     // Load the left button image from the app's main bundle
     UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
     if (!_browserOptions.lefttoright)
         leftButtonImage = [UIImage imageWithCGImage:leftButtonImage.CGImage scale:leftButtonImage.scale orientation:UIImageOrientationUpMirrored];
     UIButton *leftButton = [UIButton buttonWithType:UIButtonTypeCustom];
     [leftButton setImage:leftButtonImage forState:UIControlStateNormal];
-    leftButton.frame = CGRectMake(0, 0, 12, 20); // Set frame size for the button
-    [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+    // Increase clickable area to 26x26, keep image at 12x20 and align image to the left
+    leftButton.frame = CGRectMake(0, 0, 26, 26);
+    // Move image to the left edge of the button
+    CGFloat hInset = 2.0; // small left margin
+    CGFloat vInset = (26 - 20) / 2.0;
+    leftButton.imageEdgeInsets = UIEdgeInsetsMake(vInset, hInset, vInset, 26 - 12 - hInset);
+    // Add target action for the button
+    // [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+    [leftButton addTarget:self action:@selector(goBackOrClose:) forControlEvents:UIControlEventTouchUpInside];
     UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
 
     // Set app header items: flexible space to center the image, center image, and right button
@@ -1387,6 +1404,15 @@ BOOL isExiting = FALSE;
 
     // Add the app header to the view
     [self.view addSubview:self.appHeader];
+}
+
+- (void)goBackOrClose:(id)sender
+{
+    if ([self.webView canGoBack]) {
+        [self goBack:sender];
+    } else {
+        [self close];
+    }
 }
 
 - (void) showAppFooter: (BOOL) show {
