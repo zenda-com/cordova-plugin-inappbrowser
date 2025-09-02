@@ -1084,6 +1084,7 @@ BOOL isExiting = FALSE;
             if ([self.navigationDelegate respondsToSelector:@selector(browserExit)]) {
                 [self.navigationDelegate browserExit];
             }
+            isExiting = FALSE;
         }
     });
 }
