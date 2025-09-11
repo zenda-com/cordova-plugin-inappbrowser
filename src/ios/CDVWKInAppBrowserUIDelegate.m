@@ -124,4 +124,32 @@
     _viewController = viewController;
 }
 
+// Custom implementation to handle window.open calls
+// Handle wa.me links to open in WhatsApp if installed else open safari with the whatsapp url
+- (nullable WKWebView *)webView:(WKWebView *)webView
+    createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
+    forNavigationAction:(WKNavigationAction *)navigationAction
+    windowFeatures:(WKWindowFeatures *)windowFeatures
+{
+    // Intercept window.open calls
+    if (!navigationAction.targetFrame) {
+      NSURL *url = navigationAction.request.URL;
+      
+      // If url is wa.me
+      if ([url.host isEqualToString:@"wa.me"]) {
+          // Open in whatsapp if installed
+          NSURL *whatsappURL = [NSURL URLWithString:[NSString stringWithFormat:@"whatsapp://%@", url.path]];
+          if ([[UIApplication sharedApplication] canOpenURL:whatsappURL]) {
+              [[UIApplication sharedApplication] openURL:whatsappURL options:@{} completionHandler:nil];
+          } else {
+              // Open in safari
+              [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+          }
+          return nil;
+      }
+      return nil;
+    }
+    return nil;
+}
+
 @end
