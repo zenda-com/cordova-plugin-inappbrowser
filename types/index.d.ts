@@ -21,6 +21,9 @@ interface InAppBrowser {
      * @param  options Options for the InAppBrowser. Optional, defaulting to: location=yes.
      *                 The options string must not contain any blank space, and each feature's
      *                 name/value pairs must be separated by a comma. Feature names are case insensitive.
+     * @example
+     * // Setting invisiblesession to prevent session/cookie leakage
+     * cordova.InAppBrowser.open('https://example.com', '_blank', 'invisiblesession=yes');
      */
     open(url: string, target?: string, options?: string): InAppBrowser;
 

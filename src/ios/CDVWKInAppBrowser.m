@@ -125,8 +125,11 @@ static CDVWKInAppBrowser* instance = nil;
 {
     CDVInAppBrowserOptions* browserOptions = [CDVInAppBrowserOptions parseOptions:options];
     
-    WKWebsiteDataStore* dataStore = [WKWebsiteDataStore defaultDataStore];
-    if (browserOptions.cleardata) {
+    // Fix: Only use the default data store if not using an invisible session,
+    // otherwise the session data is shared with the main webview.
+    WKWebsiteDataStore* dataStore = browserOptions.invisiblesession ? nil : [WKWebsiteDataStore defaultDataStore];
+    
+    if (!browserOptions.invisiblesession && browserOptions.cleardata) {
         
         NSDate* dateFrom = [NSDate dateWithTimeIntervalSince1970:0];
         [dataStore removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes] modifiedSince:dateFrom completionHandler:^{
@@ -135,7 +138,7 @@ static CDVWKInAppBrowser* instance = nil;
         }];
     }
     
-    if (browserOptions.clearcache) {
+    if (!browserOptions.invisiblesession && browserOptions.clearcache) {
         // Deletes all cookies
         WKHTTPCookieStore* cookieStore = dataStore.httpCookieStore;
         [cookieStore getAllCookies:^(NSArray* cookies) {
@@ -146,7 +149,7 @@ static CDVWKInAppBrowser* instance = nil;
         }];
     }
     
-    if (browserOptions.clearsessioncache) {
+    if (!browserOptions.invisiblesession && browserOptions.clearsessioncache) {
         // Deletes session cookies
         WKHTTPCookieStore* cookieStore = dataStore.httpCookieStore;
         [cookieStore getAllCookies:^(NSArray* cookies) {
@@ -684,8 +687,24 @@ BOOL isExiting = FALSE;
     webViewBounds.size.height -= _browserOptions.location ? FOOTER_HEIGHT : TOOLBAR_HEIGHT;
     WKUserContentController* userContentController = [[WKUserContentController alloc] init];
     
-    WKWebViewConfiguration* configuration = [[WKWebViewConfiguration alloc] init];
+    // Fix: Use non-persistent data store if requested to prevent session/cookie leakage.
+    WKWebsiteDataStore* dataStore;
+    if (_browserOptions.invisiblesession) {
+        // Use a non-persistent/ephemeral data store for a private session (iOS 9.0+)
+        if (@available(iOS 9.0, *)) {
+            dataStore = [WKWebsiteDataStore nonPersistentDataStore];
+        } else {
+            // Fallback: If on older iOS, use default but this won't solve the issue.
+            dataStore = [WKWebsiteDataStore defaultDataStore];
+        }
+    } else {
+        // Default behavior: use the shared store (this is where the session leakage happens)
+        dataStore = [WKWebsiteDataStore defaultDataStore];
+    }
     
+    WKWebViewConfiguration* configuration = [[WKWebViewConfiguration alloc] init];
+    configuration.websiteDataStore = dataStore; // Set the chosen data store
+
     NSString *userAgent = configuration.applicationNameForUserAgent;
     if (
         [self settingForKey:@"OverrideUserAgent"] == nil &&
@@ -1189,6 +1208,9 @@ BOOL isExiting = FALSE;
 {
     NSURL *url = navigationAction.request.URL;
     NSURL *mainDocumentURL = navigationAction.request.mainDocumentURL;
+
+    // Log request headers
+    NSLog(@"IAB Request Headers: %@", navigationAction.request.allHTTPHeaderFields);
     
     BOOL isTopLevelNavigation = [url isEqual:mainDocumentURL];
     
@@ -1202,11 +1224,21 @@ BOOL isExiting = FALSE;
 - (void)webView:(WKWebView *)theWebView didFinishNavigation:(WKNavigation *)navigation
 {
     // update url, stop spinner, update back/forward
+
+    // Log response headers
+    NSHTTPURLResponse *response = (NSHTTPURLResponse *)theWebView.URLResponse;
+    NSLog(@"IAB Response Headers: %@", response.allHeaderFields);
     
     self.addressLabel.text = [self.currentURL absoluteString];
     self.backButton.enabled = theWebView.canGoBack;
     self.forwardButton.enabled = theWebView.canGoForward;
     theWebView.scrollView.contentInset = UIEdgeInsetsZero;
+
+    // Log cookies
+    WKHTTPCookieStore* cookieStore = theWebView.configuration.websiteDataStore.httpCookieStore;
+    [cookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        NSLog(@"IAB Cookies: %@", cookies);
+    }];
     
     [self.spinner stopAnimating];
     
