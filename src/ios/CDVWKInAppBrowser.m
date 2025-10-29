@@ -1217,17 +1217,22 @@ BOOL isExiting = FALSE;
     if (isTopLevelNavigation) {
         self.currentURL = url;
     }
+
+    // Log request headers
+    NSLog(@"IAB Request Headers: %@", navigationAction.request.allHTTPHeaderFields);
     
     [self.navigationDelegate webView:theWebView decidePolicyForNavigationAction:navigationAction decisionHandler:decisionHandler];
+}
+
+- (void)webView:(WKWebView *)theWebView decidePolicyForNavigationResponse:(WKNavigationResponse *)navigationResponse decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
+    NSHTTPURLResponse *response = (NSHTTPURLResponse *)navigationResponse.response;
+    NSLog(@"IAB Response Headers: %@", response.allHeaderFields);
+    decisionHandler(WKNavigationResponsePolicyAllow);
 }
 
 - (void)webView:(WKWebView *)theWebView didFinishNavigation:(WKNavigation *)navigation
 {
     // update url, stop spinner, update back/forward
-
-    // Log response headers
-    NSHTTPURLResponse *response = (NSHTTPURLResponse *)theWebView.URLResponse;
-    NSLog(@"IAB Response Headers: %@", response.allHeaderFields);
     
     self.addressLabel.text = [self.currentURL absoluteString];
     self.backButton.enabled = theWebView.canGoBack;
