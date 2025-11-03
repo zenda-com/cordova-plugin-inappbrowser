@@ -471,6 +471,7 @@ public class InAppBrowser extends CordovaPlugin {
                         // Custom options
                         && !key.equals(CustomOption.APP_FOOTER_IMAGE_URL)
                         && !key.equals(CustomOption.APP_FOOTER_LABEL)
+                        && !key.equals(CustomOption.STOP_NAVIGATION_BACK_AT_URL)
                     ) {
                         value = value.equals("yes") || value.equals("no") ? value : "yes";
                     }
@@ -594,7 +595,16 @@ public class InAppBrowser extends CordovaPlugin {
      */
     public void goBack() {
         if (this.inAppWebView.canGoBack()) {
-            this.inAppWebView.goBack();
+
+            // If getStopNavigationBackAtURL is exist, Do not goBack if the current url is stopNavigationBackAtURL
+            if (customOption.getStopNavigationBackAtURL() != null) {
+                if (!this.inAppWebView.getUrl().startsWith(customOption.getStopNavigationBackAtURL()))
+                    this.inAppWebView.goBack();
+                else closeDialog();
+            }
+            else {
+                this.inAppWebView.goBack();
+            }
         }
     }
 
@@ -1771,6 +1781,8 @@ public class InAppBrowser extends CordovaPlugin {
         private static final String APP_FOOTER_IMAGE_URL = "appFooterImageURL";
         private static final String APP_FOOTER_LABEL = "appFooterLabel";
 
+        private static final String STOP_NAVIGATION_BACK_AT_URL = "stopNavigationBackAtURL";
+
         private static final int APP_HEADER_HEIGHT = 56;
         private static final int APP_FOOTER_HEIGHT = 56;
 
@@ -2086,6 +2098,10 @@ public class InAppBrowser extends CordovaPlugin {
         private boolean isLeftToRight() {
             String option = features.get(LEFT_TO_RIGHT);
             return option == null || option.equals("yes");
+        }
+
+        public String getStopNavigationBackAtURL() {
+          return this.features.get(STOP_NAVIGATION_BACK_AT_URL);
         }
     }
 }

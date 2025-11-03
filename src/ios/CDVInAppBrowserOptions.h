@@ -54,6 +54,7 @@
 @property (nonatomic, assign) BOOL appfooter;
 @property (nonatomic, copy) NSString* appfooterimageurl;
 @property (nonatomic, copy) NSString* appfooterlabel;
+@property (nonatomic, copy) NSString* stopnavigationbackaturl;
 
 + (CDVInAppBrowserOptions*)parseOptions:(NSString*)options;
 

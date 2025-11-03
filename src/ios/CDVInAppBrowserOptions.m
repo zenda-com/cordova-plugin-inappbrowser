@@ -54,6 +54,7 @@
         self.appfooter = NO;
         self.appfooterimageurl = nil;
         self.appfooterlabel = nil;
+        self.stopnavigationbackaturl = nil;
     }
 
     return self;
