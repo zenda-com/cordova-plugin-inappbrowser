@@ -1410,7 +1410,17 @@ BOOL isExiting = FALSE;
 - (void)goBackOrClose:(id)sender
 {
     if ([self.webView canGoBack]) {
-        [self goBack:sender];
+      
+        // If getStopNavigationBackAtURL is exist, Do not goBack if the current url is stopNavigationBackAtURL
+        if (_browserOptions.stopnavigationbackaturl != nil) {
+            NSString *currentURL = self.webView.URL.absoluteString;
+            if (![currentURL hasPrefix:_browserOptions.stopnavigationbackaturl])
+                [self goBack:sender];
+            else [self close];
+        }
+        else {
+            [self goBack:sender];
+        }
     } else {
         [self close];
     }
