@@ -88,4 +88,7 @@
 // Custom: Method added
 - (void)close: (BOOL) enforce;
 
+// Custom: Method added for message handlers validation and recovery
+- (void)validateAndRecoverMessageHandlers;
+
 @end
