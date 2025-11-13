@@ -1353,9 +1353,18 @@ BOOL isExiting = FALSE;
             IAB_BRIDGE_NAME];
         [self.webView evaluateJavaScript:bridgeScript completionHandler:^(id result, NSError *error) {
             if (error) {
-                NSLog(@"❌ Failed to recover message handler: %@", error.localizedDescription);
+                NSLog(@"Message handler: ❌ Failed to inject: %@", error.localizedDescription);
             } else {
-                NSLog(@"✅ Message handler bridge recovered successfully");
+                NSLog(@"Message handler: ✅ Injection script executed");
+                // Verify the injection worked
+                [self.webView evaluateJavaScript:@"typeof window._cdvMessageHandler" completionHandler:^(id verifyResult, NSError *verifyError) {
+                    NSLog(@"Message handler: 🔍 Post-injection typeof = '%@'", verifyResult);
+                    if ([verifyResult isKindOfClass:[NSString class]] && [verifyResult isEqualToString:@"function"]) {
+                        NSLog(@"Message handler: ✅ Injection successful - bridge is now functional");
+                    } else {
+                        NSLog(@"Message handler: ❌ Injection failed - bridge still not functional (got '%@')", verifyResult);
+                    }
+                }];
             }
         }];
     }
