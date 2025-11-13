@@ -581,6 +581,10 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)didFinishNavigation:(WKWebView*)theWebView
 {
+    // ISSUE: Page navigation can reset JavaScript context, losing _cdvMessageHandler bridge function
+    // FIX: Validate and recover message handlers after navigation completes using unified recovery method
+    [self.inAppBrowserViewController validateAndRecoverMessageHandlers];
+    
     if (self.callbackId != nil) {
         NSString* url = [theWebView.URL absoluteString];
         if(url == nil){
@@ -672,6 +676,9 @@ BOOL isExiting = FALSE;
 }
 
 -(void)dealloc {
+    // ISSUE: Notification observers can cause memory leaks and crashes if not removed
+    // FIX: Remove notification observers to prevent memory leaks and crashes
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
     //NSLog(@"dealloc");
 }
 
@@ -1024,6 +1031,19 @@ BOOL isExiting = FALSE;
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    
+    // FIX: Message events not triggering after app background/foreground
+    // ISSUE: When app goes to background, iOS may:
+    // 1. Terminate WKWebView web content process (while keeping WKWebView object alive)
+    // 2. Reset JavaScript execution context, losing _cdvMessageHandler bridge function
+    // 3. Clear script message handlers from WKUserContentController
+    // 4. Pause/reset JavaScript execution during app state transitions
+    //
+    // SOLUTION: Monitor app lifecycle and recover message handlers when app becomes active
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+                                             selector:@selector(appDidBecomeActive:) 
+                                                 name:UIApplicationDidBecomeActiveNotification 
+                                               object:nil];
 }
 
 - (void)viewDidDisappear:(BOOL)animated
@@ -1275,6 +1295,55 @@ BOOL isExiting = FALSE;
     }];
 
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+}
+
+#pragma mark - Message Handler Recovery (Background/Foreground Fix)
+
+// ISSUE: iOS can terminate the web content process in background while keeping WKWebView object alive
+//        This breaks all JavaScript execution and message handlers without any visible indication
+// FIX: Handle WKWebView web content process termination - detect process termination and recover message handlers
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    NSLog(@"⚠️ WKWebView web content process terminated - recovering message handlers");
+    [self recoverMessageHandlers];
+}
+
+// ISSUE: Multiple scenarios can break message handlers (process termination, context loss, etc.)
+// FIX: Unified recovery method for message handlers - re-inject the complete message handler bridge
+- (void)recoverMessageHandlers {
+    if (self.webView) {
+        NSString *bridgeScript = [NSString stringWithFormat:
+            @"(function(w){if(!w._cdvMessageHandler) {w._cdvMessageHandler = function(id,d){w.webkit.messageHandlers.%@.postMessage({d:d, id:id});}}})(window)", 
+            IAB_BRIDGE_NAME];
+        [self.webView evaluateJavaScript:bridgeScript completionHandler:^(id result, NSError *error) {
+            if (error) {
+                NSLog(@"❌ Failed to recover message handler: %@", error.localizedDescription);
+            } else {
+                NSLog(@"✅ Message handler bridge recovered successfully");
+            }
+        }];
+    }
+}
+
+// ISSUE: App backgrounding/foregrounding can break JavaScript context and message bridges
+// FIX: App lifecycle monitoring for message handler recovery - validate and recover message handlers when app becomes active
+- (void)appDidBecomeActive:(NSNotification *)notification {
+    NSLog(@"App became active - validating message handlers");
+    [self validateAndRecoverMessageHandlers];
+}
+
+// ISSUE: JavaScript context can be reset without destroying webview, losing _cdvMessageHandler function
+// FIX: Validate if message handlers are still functional - check if bridge function exists and recover if missing
+- (void)validateAndRecoverMessageHandlers {
+    if (self.webView) {
+        [self.webView evaluateJavaScript:@"typeof window._cdvMessageHandler" completionHandler:^(id result, NSError *error) {
+            if ([result isEqualToString:@"undefined"] || error) {
+                NSLog(@"⚠️ Message handler bridge missing - recovering");
+                [self recoverMessageHandlers];
+            } else {
+                NSLog(@"✅ Message handler bridge is functional");
+            }
+        }];
+    }
 }
 
 #pragma mark UIAdaptivePresentationControllerDelegate
