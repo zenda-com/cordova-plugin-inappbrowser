@@ -1230,6 +1230,16 @@ BOOL isExiting = FALSE;
     decisionHandler(WKNavigationResponsePolicyAllow);
 }
 
+// ADD THIS METHOD HERE - in CDVWKInAppBrowserViewController
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    // ISSUE: iOS can terminate the web content process in background while keeping WKWebView object alive, breaking all JavaScript execution and message handlers
+    // FIX: Handle WKWebView web content process termination - detect process termination and recover message handlers
+    NSLog(@"⚠️ WebView process terminated in CDVWKInAppBrowserViewController");
+    
+    // Reload the webview to recover from process termination
+    [webView reload];
+}
+
 - (void)webView:(WKWebView *)theWebView didFinishNavigation:(WKNavigation *)navigation
 {
     // update url, stop spinner, update back/forward
