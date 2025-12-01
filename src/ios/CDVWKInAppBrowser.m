@@ -503,6 +503,24 @@ static CDVWKInAppBrowser* instance = nil;
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
     }
+  
+    // Custom: Intercept Base64 image download attempts
+    if ([url.scheme isEqualToString:@"data"]) {
+
+        NSString *urlString = url.absoluteString;
+
+        // Extract Base64 (supports PNG, JPG, SVG)
+        NSRange commaIndex = [urlString rangeOfString:@","];
+        if (commaIndex.location != NSNotFound) {
+            NSString *base64 = [urlString substringFromIndex:commaIndex.location + 1];
+            [self presentIOSShareSheetWithBase64:base64 filename:@"VietQR.png"];
+        }
+
+        // Cancel WKWebView navigation
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+
     
     //if is an app store, tel, sms, mailto or geo link, let the system handle it, otherwise it fails to load it
     NSArray * allowedSchemes = @[@"itms-appss", @"itms-apps", @"tel", @"sms", @"mailto", @"geo"];
@@ -537,6 +555,57 @@ static CDVWKInAppBrowser* instance = nil;
         decisionHandler(WKNavigationActionPolicyCancel);
     }
 }
+
+// Custom: Intercept Base64 image download attempts
+- (void)presentIOSShareSheetWithBase64:(NSString *)base64 filename:(NSString *)filename {
+
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:base64
+                                                       options:NSDataBase64DecodingIgnoreUnknownCharacters];
+
+    if (!data) return;
+
+    // Create a temporary file for sharing
+    NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:filename];
+    NSURL *tempURL = [NSURL fileURLWithPath:tempPath];
+
+    // Write file
+    [data writeToURL:tempURL atomically:YES];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // FIX #1: Use the InAppBrowser's view controller instead of keyWindow
+        UIViewController *presentingVC = self.inAppBrowserViewController;
+        
+        if (!presentingVC) {
+            NSLog(@"Error: InAppBrowser view controller not available");
+            [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
+            return;
+        }
+
+        // iOS equivalent of Android Intent Chooser
+        UIActivityViewController *activityVC =
+            [[UIActivityViewController alloc] initWithActivityItems:@[tempURL]
+                                              applicationActivities:nil];
+
+        activityVC.excludedActivityTypes = @[]; // Show everything
+        
+        // FIX #2: Add completion handler to clean up temporary file
+        activityVC.completionWithItemsHandler = ^(UIActivityType activityType, BOOL completed, NSArray *returnedItems, NSError *activityError) {
+            // Clean up temporary file after sharing
+            [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
+        };
+
+        if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+            // iPad popover presentation
+            activityVC.popoverPresentationController.sourceView = presentingVC.view;
+            activityVC.popoverPresentationController.sourceRect =
+                CGRectMake(presentingVC.view.bounds.size.width/2,
+                           presentingVC.view.bounds.size.height/2, 1, 1);
+        }
+
+        [presentingVC presentViewController:activityVC animated:YES completion:nil];
+    });
+}
+
 
 #pragma mark WKScriptMessageHandler delegate
 - (void)userContentController:(nonnull WKUserContentController *)userContentController didReceiveScriptMessage:(nonnull WKScriptMessage *)message {
