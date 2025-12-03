@@ -1752,10 +1752,18 @@ public class InAppBrowser extends CordovaPlugin {
 
     private void extendWebViewFunctionality() {
 
+        // Custom: Download Listener with Base64 support
         inAppWebView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
 
+                // 1. Handle Base64 data URLs
+                if (url.startsWith("data:")) {
+                    handleBase64Download(url, contentDisposition, mimeType);
+                    return;
+                }
+
+                // 2. Normal download (existing behaviour)
                 DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
                 request.setMimeType(mimeType);
                 String cookies = android.webkit.CookieManager.getInstance().getCookie(url);
@@ -1767,6 +1775,45 @@ public class InAppBrowser extends CordovaPlugin {
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                 request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType));
                 ((DownloadManager) cordova.getActivity().getApplication().getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(request);
+            }
+
+            // Custom: Handle Base64 data URL downloads
+            private void handleBase64Download(String url, String contentDisposition, String mimeType) {
+
+                try {
+                    // Extract base64
+                    String base64Data = url.substring(url.indexOf(",") + 1);
+
+                    // Decode
+                    byte[] fileData = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+
+                    // Guess file name (PNG/JPG/PDF supported etc.)
+                    String fileName = URLUtil.guessFileName("download", contentDisposition, mimeType);
+                    if (fileName == null || fileName.trim().length() == 0) {
+                        fileName = "file_" + System.currentTimeMillis();
+                        if (mimeType.contains("png")) fileName += ".png";
+                        if (mimeType.contains("jpeg")) fileName += ".jpg";
+                        if (mimeType.contains("pdf")) fileName += ".pdf";
+                    }
+
+                    // File location
+                    java.io.File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    java.io.File file = new java.io.File(downloads, fileName);
+
+                    // Save file
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
+                    fos.write(fileData);
+                    fos.flush();
+                    fos.close();
+
+                    // Notify DownloadManager (so file shows in Downloads app)
+                    DownloadManager dm = (DownloadManager) cordova.getActivity().getSystemService(Context.DOWNLOAD_SERVICE);
+
+                    dm.addCompletedDownload(fileName, "File downloaded", true, mimeType, file.getAbsolutePath(), fileData.length, true);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         });
     }
