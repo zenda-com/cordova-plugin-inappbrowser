@@ -595,7 +595,7 @@ static CDVWKInAppBrowser* instance = nil;
     NSString *mimeType = nil;
 
     // Extract MIME type from data URL: data:image/png;base64,...
-    NSString *urlString = url.absoluteString;
+    // NSString *urlString = url.absoluteString;
     NSRange mimeStart = [urlString rangeOfString:@"data:"];
     NSRange mimeEnd = [urlString rangeOfString:@";base64"];
     if (mimeStart.location != NSNotFound && mimeEnd.location != NSNotFound) {
