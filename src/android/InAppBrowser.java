@@ -1777,6 +1777,20 @@ public class InAppBrowser extends CordovaPlugin {
                 ((DownloadManager) cordova.getActivity().getApplication().getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(request);
             }
 
+            // Custom: Helper
+            private String appendMillisToFileName(String fileName) {
+                long ms = System.currentTimeMillis();
+
+                int dotIndex = fileName.lastIndexOf(".");
+                if (dotIndex != -1) {
+                    // Insert before extension
+                    return fileName.substring(0, dotIndex) + "_" + ms + fileName.substring(dotIndex);
+                } else {
+                    // No extension
+                    return fileName + "_" + ms;
+                }
+            }
+
             // Custom: Handle Base64 data URL downloads
             private void handleBase64Download(String url, String contentDisposition, String mimeType) {
 
@@ -1789,6 +1803,7 @@ public class InAppBrowser extends CordovaPlugin {
 
                     // Guess file name (PNG/JPG/PDF supported etc.)
                     String fileName = URLUtil.guessFileName("download", contentDisposition, mimeType);
+                    fileName = appendMillisToFileName(fileName);
                     if (fileName == null || fileName.trim().length() == 0) {
                         fileName = "file_" + System.currentTimeMillis();
                         if (mimeType.contains("png")) fileName += ".png";
@@ -1809,7 +1824,7 @@ public class InAppBrowser extends CordovaPlugin {
                     // Notify DownloadManager (so file shows in Downloads app)
                     DownloadManager dm = (DownloadManager) cordova.getActivity().getSystemService(Context.DOWNLOAD_SERVICE);
 
-                    dm.addCompletedDownload(fileName, "File downloaded", true, mimeType, file.getAbsolutePath(), fileData.length, true);
+                    dm.addCompletedDownload(fileName, " ", true, mimeType, file.getAbsolutePath(), fileData.length, true);
 
                 } catch (Exception e) {
                     e.printStackTrace();
