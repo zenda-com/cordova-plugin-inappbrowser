@@ -503,6 +503,24 @@ static CDVWKInAppBrowser* instance = nil;
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
     }
+  
+    // Custom: Intercept Base64 image download attempts
+    if ([url.scheme isEqualToString:@"data"]) {
+
+        NSString *urlString = url.absoluteString;
+
+        // Extract Base64 (supports PNG, JPG, SVG)
+        NSRange commaIndex = [urlString rangeOfString:@","];
+        if (commaIndex.location != NSNotFound) {
+            NSString *base64 = [urlString substringFromIndex:commaIndex.location + 1];
+            [self presentIOSShareSheetWithBase64:base64 urlString:urlString];
+        }
+
+        // Cancel WKWebView navigation
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+
     
     //if is an app store, tel, sms, mailto or geo link, let the system handle it, otherwise it fails to load it
     NSArray * allowedSchemes = @[@"itms-appss", @"itms-apps", @"tel", @"sms", @"mailto", @"geo"];
@@ -537,6 +555,101 @@ static CDVWKInAppBrowser* instance = nil;
         decisionHandler(WKNavigationActionPolicyCancel);
     }
 }
+
+// Custom: Fallback filename generator based on MIME type
+- (NSString *)fallbackFileNameForMimeType:(NSString *)mimeType {
+
+    // Try to mimic URLUtil.guessFileName fallback
+    NSString *fileName = nil;
+
+    // Fallback in case guess cannot determine name
+    NSString *timestamp = [NSString stringWithFormat:@"%lld",
+        (long long)([[NSDate date] timeIntervalSince1970] * 1000)];
+
+    fileName = [@"file_" stringByAppendingString:timestamp];
+
+    if ([mimeType containsString:@"png"]) {
+        fileName = [fileName stringByAppendingString:@".png"];
+    }
+    else if ([mimeType containsString:@"jpeg"] || [mimeType containsString:@"jpg"]) {
+        fileName = [fileName stringByAppendingString:@".jpg"];
+    }
+    else if ([mimeType containsString:@"pdf"]) {
+        fileName = [fileName stringByAppendingString:@".pdf"];
+    }
+    else {
+        fileName = [fileName stringByAppendingString:@".bin"];
+    }
+
+    return fileName;
+}
+
+// Custom: Intercept Base64 image download attempts
+- (void)presentIOSShareSheetWithBase64:(NSString *)base64 urlString:(NSString *)urlString {
+
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:base64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
+
+    if (!data) return;
+
+    // Guess fileNmae
+    NSString *mimeType = nil;
+
+    // Extract MIME type from data URL: data:image/png;base64,...
+    // NSString *urlString = url.absoluteString;
+    NSRange mimeStart = [urlString rangeOfString:@"data:"];
+    NSRange mimeEnd = [urlString rangeOfString:@";base64"];
+    if (mimeStart.location != NSNotFound && mimeEnd.location != NSNotFound) {
+        mimeType = [urlString substringWithRange:NSMakeRange(mimeStart.location + 5,
+                        mimeEnd.location - (mimeStart.location + 5))];
+    }
+    // Use Android-style fallback if MIME is missing
+    if (mimeType == nil) {
+        mimeType = @"application/octet-stream";
+    }
+    NSString *fileName = [self fallbackFileNameForMimeType:mimeType];
+
+    // Create a temporary file for sharing
+    NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:fileName];
+    NSURL *tempURL = [NSURL fileURLWithPath:tempPath];
+
+    // Write file
+    [data writeToURL:tempURL atomically:YES];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // FIX #1: Use the InAppBrowser's view controller instead of keyWindow
+        UIViewController *presentingVC = self.inAppBrowserViewController;
+        
+        if (!presentingVC) {
+            NSLog(@"Error: InAppBrowser view controller not available");
+            [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
+            return;
+        }
+
+        // iOS equivalent of Android Intent Chooser
+        UIActivityViewController *activityVC =
+            [[UIActivityViewController alloc] initWithActivityItems:@[tempURL]
+                                              applicationActivities:nil];
+
+        activityVC.excludedActivityTypes = @[]; // Show everything
+        
+        // FIX #2: Add completion handler to clean up temporary file
+        activityVC.completionWithItemsHandler = ^(UIActivityType activityType, BOOL completed, NSArray *returnedItems, NSError *activityError) {
+            // Clean up temporary file after sharing
+            [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
+        };
+
+        if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+            // iPad popover presentation
+            activityVC.popoverPresentationController.sourceView = presentingVC.view;
+            activityVC.popoverPresentationController.sourceRect =
+                CGRectMake(presentingVC.view.bounds.size.width/2,
+                           presentingVC.view.bounds.size.height/2, 1, 1);
+        }
+
+        [presentingVC presentViewController:activityVC animated:YES completion:nil];
+    });
+}
+
 
 #pragma mark WKScriptMessageHandler delegate
 - (void)userContentController:(nonnull WKUserContentController *)userContentController didReceiveScriptMessage:(nonnull WKScriptMessage *)message {
@@ -1228,6 +1341,16 @@ BOOL isExiting = FALSE;
     NSHTTPURLResponse *response = (NSHTTPURLResponse *)navigationResponse.response;
     NSLog(@"IAB Response Headers: %@", response.allHeaderFields);
     decisionHandler(WKNavigationResponsePolicyAllow);
+}
+
+// ADD THIS METHOD HERE - in CDVWKInAppBrowserViewController
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    // ISSUE: iOS can terminate the web content process in background while keeping WKWebView object alive, breaking all JavaScript execution and message handlers
+    // FIX: Handle WKWebView web content process termination - detect process termination and recover message handlers
+    NSLog(@"⚠️ WebView process terminated in CDVWKInAppBrowserViewController");
+    
+    // Reload the webview to recover from process termination
+    [webView reload];
 }
 
 - (void)webView:(WKWebView *)theWebView didFinishNavigation:(WKNavigation *)navigation
