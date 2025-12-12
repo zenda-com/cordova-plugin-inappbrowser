@@ -1507,23 +1507,71 @@ BOOL isExiting = FALSE;
     border.frame = CGRectMake(0, self.appHeader.frame.size.height - 1, self.appHeader.frame.size.width, 1);
     [self.appHeader.layer addSublayer:border];
 
-    // Load the center image from the app's main bundle
+    // // Load the center image from the app's main bundle
+    // UIImage *centerImage = [UIImage imageNamed:centerImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    // UIImageView *centerImageView = [[UIImageView alloc] initWithImage:centerImage];
+    // centerImageView.contentMode = UIViewContentModeScaleAspectFit;
+    // centerImageView.frame = CGRectMake(0, 0, 131, 34);
+    // UIBarButtonItem *centerImageItem = [[UIBarButtonItem alloc] initWithCustomView:centerImageView];
+
+    /* Load the center image from the app's main bundle */
     UIImage *centerImage = [UIImage imageNamed:centerImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+
+    // Create the ImageView first
     UIImageView *centerImageView = [[UIImageView alloc] initWithImage:centerImage];
     centerImageView.contentMode = UIViewContentModeScaleAspectFit;
-    centerImageView.frame = CGRectMake(0, 0, 131, 34);
-    UIBarButtonItem *centerImageItem = [[UIBarButtonItem alloc] initWithCustomView:centerImageView];
 
-    // Create a flexible space to push the center image to the middle
-    UIBarButtonItem *flexibleSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    // rap the UIImageView inside a container UIView
+    // This container is what we assign to the UIBarButtonItem
+    UIView *centerContainerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 131, 34)];
+
+    // Position the imageView precisely inside its container
+    centerImageView.frame = centerContainerView.bounds; // Make it fill the container perfectly
+    [centerContainerView addSubview:centerImageView];
+
+    // Create the UIBarButtonItem with the container view
+    UIBarButtonItem *centerImageItem = [[UIBarButtonItem alloc] initWithCustomView:centerContainerView];
+
+    // Apply the iOS 26 compatibility fix within the availability check
+    if (@available(iOS 26.0, *)) {
+        centerImageItem.hidesSharedBackground = YES;
+    }
 
     // Load the right button image from the app's main bundle
+    // UIImage *rightButtonImage = [UIImage imageNamed:rightButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    // UIButton *rightButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    // [rightButton setImage:rightButtonImage forState:UIControlStateNormal];
+    // rightButton.frame = CGRectMake(0, 0, 25, 26); // Set frame size for the button
+    // [rightButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    // UIBarButtonItem *rightButtonItem = [[UIBarButtonItem alloc] initWithCustomView:rightButton];
+
+    /* Load the right button image from the app's main budle */
     UIImage *rightButtonImage = [UIImage imageNamed:rightButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+
+    // Use a container UIView for precise control over the layout
+    UIView *rightContainerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 25, 26)];
+    // Optional: Set a background color to debug the container's frame
+    // rightContainerView.backgroundColor = [UIColor blueColor]; 
+
     UIButton *rightButton = [UIButton buttonWithType:UIButtonTypeCustom];
     [rightButton setImage:rightButtonImage forState:UIControlStateNormal];
-    rightButton.frame = CGRectMake(0, 0, 25, 26); // Set frame size for the button
+
+    // Set the button frame to match the container frame
+    rightButton.frame = CGRectMake(0, 0, 25, 26); 
+
+    // Add target action for the button (attach to the button, not the container view)
     [rightButton addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
-    UIBarButtonItem *rightButtonItem = [[UIBarButtonItem alloc] initWithCustomView:rightButton];
+
+    // Add the button to the container view
+    [rightContainerView addSubview:rightButton];
+
+    // Initialize the bar button item with the container view
+    UIBarButtonItem *rightButtonItem = [[UIBarButtonItem alloc] initWithCustomView:rightContainerView];
+
+    // FIX: Remove iOS 26 glass effect and ensure no shared background is applied
+    if (@available(iOS 26.0, *)) {
+        rightButtonItem.hidesSharedBackground = YES; 
+    }
     
     // // Load the left button image from the app's main bundle
     // UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
@@ -1535,22 +1583,65 @@ BOOL isExiting = FALSE;
     // [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
     // UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
 
-    // Load the left button image from the app's main bundle
+    // // Load the left button image from the app's main bundle
+    // UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
+    // if (!_browserOptions.lefttoright)
+    //     leftButtonImage = [UIImage imageWithCGImage:leftButtonImage.CGImage scale:leftButtonImage.scale orientation:UIImageOrientationUpMirrored];
+    // UIButton *leftButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    // [leftButton setImage:leftButtonImage forState:UIControlStateNormal];
+    // // Increase clickable area to 26x26, keep image at 12x20 and align image to the left
+    // leftButton.frame = CGRectMake(0, 0, 26, 26);
+    // // Move image to the left edge of the button
+    // CGFloat hInset = 2.0; // small left margin
+    // CGFloat vInset = (26 - 20) / 2.0;
+    // leftButton.imageEdgeInsets = UIEdgeInsetsMake(vInset, hInset, vInset, 26 - 12 - hInset);
+    // // Add target action for the button
+    // // [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+    // [leftButton addTarget:self action:@selector(goBackOrClose:) forControlEvents:UIControlEventTouchUpInside];
+    // UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+
+    /* Load the left button image from the app's main bundle */
     UIImage *leftButtonImage = [UIImage imageNamed:leftButtonImageName inBundle:[NSBundle mainBundle] compatibleWithTraitCollection:nil];
     if (!_browserOptions.lefttoright)
         leftButtonImage = [UIImage imageWithCGImage:leftButtonImage.CGImage scale:leftButtonImage.scale orientation:UIImageOrientationUpMirrored];
+
+    // Use a container UIView for precise control over the layout
+    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 26, 26)];
+    // Optional: Set a background color to debug the container's frame
+    // containerView.backgroundColor = [UIColor redColor];
+
     UIButton *leftButton = [UIButton buttonWithType:UIButtonTypeCustom];
     [leftButton setImage:leftButtonImage forState:UIControlStateNormal];
-    // Increase clickable area to 26x26, keep image at 12x20 and align image to the left
-    leftButton.frame = CGRectMake(0, 0, 26, 26);
-    // Move image to the left edge of the button
+    leftButton.frame = CGRectMake(0, 0, 26, 26); // Set the button frame within the container
+
+    // The imageEdgeInsets were causing issues when the button itself was constrained by iOS 26 padding.
+    // With the container view, you typically don't need these insets if your image size matches the button size,
+    // or you use Auto Layout to center the image.
+
+    // If you still need specific positioning within the 26x26 area,
+    // ensure the button itself has the exact desired size and position.
+    // Example: Center a 12x20 image within the 26x26 button frame if the button size is 26x26
+    leftButton.imageView.contentMode = UIViewContentModeScaleAspectFit; // Prevents shrinking/stretching
     CGFloat hInset = 2.0; // small left margin
     CGFloat vInset = (26 - 20) / 2.0;
     leftButton.imageEdgeInsets = UIEdgeInsetsMake(vInset, hInset, vInset, 26 - 12 - hInset);
-    // Add target action for the button
-    // [leftButton addTarget:self action:@selector(goBack:) forControlEvents:UIControlEventTouchUpInside];
+
+
+    // Add target action for the button (attach to the button, not the container view)
     [leftButton addTarget:self action:@selector(goBackOrClose:) forControlEvents:UIControlEventTouchUpInside];
-    UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+
+    // Add the button to the container view
+    [containerView addSubview:leftButton];
+
+    UIBarButtonItem *leftButtonItem = [[UIBarButtonItem alloc] initWithCustomView:containerView];
+
+    // Apply the hidesSharedBackground property to the container's bar item
+    if (@available(iOS 26.0, *)) {
+        leftButtonItem.hidesSharedBackground = YES;
+    }
+
+    /* Create a flexible space to push the center image to the middle */
+    UIBarButtonItem *flexibleSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
     // Set app header items: flexible space to center the image, center image, and right button
     [self.appHeader setItems: _browserOptions.lefttoright ? @[leftButtonItem, flexibleSpace, centerImageItem, flexibleSpace, rightButtonItem] : @[rightButtonItem, flexibleSpace, centerImageItem, flexibleSpace, leftButtonItem]];
