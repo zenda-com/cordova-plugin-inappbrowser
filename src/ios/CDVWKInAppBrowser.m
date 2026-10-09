@@ -1249,7 +1249,24 @@ BOOL isExiting = FALSE;
 }
 
 - (float) getStatusBarOffset {
-    return (float) [[UIApplication sharedApplication] statusBarFrame].size.height;
+    // iOS 27 fix: -[UIApplication statusBarFrame] is deprecated and returns 0 for apps
+    // built with the iOS 27 SDK, which pushed the app header and the web view under the
+    // status bar. Read the height from the window scene's status bar manager instead.
+    // viewWillAppear can run before this view has a window on first presentation, so
+    // fall back to the first connected window scene, then to the view's safe area.
+    UIWindowScene *scene = self.view.window.windowScene;
+    if (!scene) {
+        for (UIScene *connectedScene in UIApplication.sharedApplication.connectedScenes) {
+            if ([connectedScene isKindOfClass:[UIWindowScene class]]) {
+                scene = (UIWindowScene *)connectedScene;
+                break;
+            }
+        }
+    }
+    if (scene.statusBarManager) {
+        return (float) scene.statusBarManager.statusBarFrame.size.height;
+    }
+    return (float) self.view.safeAreaInsets.top;
 }
 
 - (void) rePositionViews {
